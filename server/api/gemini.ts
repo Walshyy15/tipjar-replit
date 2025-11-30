@@ -1,7 +1,7 @@
 import fetch, { FormData } from 'node-fetch';
 import { OCR_RATE_LIMIT_CONFIG, isRateLimitError } from '../config/rate-limit';
 
-const NANONETS_EXTRACTION_ENDPOINT = 'https://extraction-api.nanonets.com/extract';
+const NANONETS_OCR_ENDPOINT = 'https://app.nanonets.com/api/v2/OCR/Model/{modelId}/LabelFile/';
 
 // Simple in-memory rate limiter
 class RateLimiter {
@@ -98,13 +98,16 @@ export async function analyzeImage(
     };
   }
 
+  const modelId = process.env.NANONETS_MODEL_ID || 'Nanonets-ocr2-7B';
+  const endpoint = NANONETS_OCR_ENDPOINT.replace('{modelId}', modelId);
+
   for (let attempt = 0; attempt <= OCR_RATE_LIMIT_CONFIG.maxRetries; attempt++) {
     try {
       const formData = new FormData();
       const fileBlob = new Blob([Buffer.from(imageBase64, 'base64')], { type: mimeType });
       formData.append('file', fileBlob, `upload.${mimeType.split('/')[1] || 'jpg'}`);
 
-      const response = await fetch(NANONETS_EXTRACTION_ENDPOINT, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${nanonetsKey}`,
