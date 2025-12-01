@@ -2,7 +2,7 @@ import express from "express";
 import serverless from "serverless-http";
 import multer from "multer";
 import { storage } from "../server/storage";
-import { analyzeImage } from "../server/api/gemini";
+import { analyzeImage } from "../server/api/nanonets";
 import { extractPartnerHours, formatOCRResult } from "../client/src/lib/formatUtils";
 import { calculatePayout } from "../client/src/lib/utils";
 import { roundAndCalculateBills } from "../client/src/lib/billCalc";
