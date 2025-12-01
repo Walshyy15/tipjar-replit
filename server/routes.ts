@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import multer from "multer";
-import { analyzeImage } from "./api/gemini";
+import { analyzeImage } from "./api/nanonets";
 import { extractPartnerHours, formatOCRResult } from "../client/src/lib/formatUtils";
 import { calculatePayout } from "../client/src/lib/utils";
 import { roundAndCalculateBills } from "../client/src/lib/billCalc";
@@ -28,12 +28,12 @@ export async function registerRoutes(app: Express, skipServer = false): Promise<
 
       // Convert image buffer to base64
       const imageBase64 = req.file.buffer.toString("base64");
-      
+
       // Use Nanonets OCR to analyze the image
       const userNanonetsKey = (req.headers["x-nanonets-key"] as string) || undefined;
       const mimeType = req.file.mimetype || "image/jpeg";
       const result = await analyzeImage(imageBase64, mimeType, userNanonetsKey);
-      
+
       if (!result.text) {
         // Return a specific error message from the API if available
         return res.status(500).json({
