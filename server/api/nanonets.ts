@@ -9,7 +9,10 @@ class RateLimiter {
     private readonly maxRequests: number;
     private readonly windowMs: number;
 
-    constructor(maxRequests: number = OCR_RATE_LIMIT_CONFIG.maxRequests, windowMs: number = OCR_RATE_LIMIT_CONFIG.windowMs) {
+    constructor(
+        maxRequests: number = OCR_RATE_LIMIT_CONFIG.maxRequests,
+        windowMs: number = OCR_RATE_LIMIT_CONFIG.windowMs,
+    ) {
         this.maxRequests = maxRequests;
         this.windowMs = windowMs;
     }
@@ -83,6 +86,7 @@ export async function analyzeImage(
     apiKey?: string,
     modelId?: string,
 ): Promise<{ text: string | null; error?: string }> {
+    // Local rate limit (before even calling Nanonets)
     if (!rateLimiter.canMakeRequest()) {
         const waitTime = rateLimiter.getTimeUntilNextRequest();
         return {
@@ -99,11 +103,18 @@ export async function analyzeImage(
         };
     }
 
+    // modelId is not needed for the FullText endpoint, but kept for backward compatibility
+    void modelId;
+
     for (let attempt = 0; attempt <= OCR_RATE_LIMIT_CONFIG.maxRetries; attempt++) {
         try {
             const formData = new FormData();
-            const fileBlob = new Blob([Buffer.from(imageBase64, 'base64')], { type: mimeType });
-            formData.append('file', fileBlob, `upload.${mimeType.split('/')[1] || 'jpg'}`);
+            const buffer = Buffer.from(imageBase64, 'base64');
+            const extension = mimeType.split('/')[1] || 'jpg';
+
+            // Using Blob keeps this close to your original implementation.
+            const fileBlob = new Blob([buffer], { type: mimeType });
+            formData.append('file', fileBlob as any, `upload.${extension}`);
 
             const response = await fetch(NANONETS_EXTRACTION_ENDPOINT, {
                 method: 'POST',
@@ -119,16 +130,51 @@ export async function analyzeImage(
 
                 if (shouldRetry && attempt < OCR_RATE_LIMIT_CONFIG.maxRetries) {
                     const delay = Math.min(
-                        OCR_RATE_LIMIT_CONFIG.baseDelay * Math.pow(OCR_RATE_LIMIT_CONFIG.backoffMultiplier, attempt),
+                        OCR_RATE_LIMIT_CONFIG.baseDelay *
+                            Math.pow(OCR_RATE_LIMIT_CONFIG.backoffMultiplier, attempt),
                         OCR_RATE_LIMIT_CONFIG.maxDelay,
                     );
-                    console.log(`Rate limit hit, retrying in ${delay}ms (attempt ${attempt + 1}/${OCR_RATE_LIMIT_CONFIG.maxRetries + 1})`);
+                    console.log(
+                        `Rate limit hit, retrying in ${delay}ms (attempt ${attempt + 1}/${
+                            OCR_RATE_LIMIT_CONFIG.maxRetries + 1
+                        })`,
+                    );
                     await sleep(delay);
                     continue;
                 }
 
                 console.error('Nanonets API error:', response.status, errorText);
-                const sanitizedError = errorText.slice(0, 500) || 'Failed to call Nanonets OCR API';
+
+                // Try to parse Nanonets' structured error JSON to surface a friendly message
+                let friendlyMessage: string | null = null;
+                try {
+                    const parsed = JSON.parse(errorText);
+                    if (parsed && typeof parsed === 'object') {
+                        const anyParsed = parsed as any;
+
+                        if (typeof anyParsed.message === 'string') {
+                            friendlyMessage = anyParsed.message;
+                        } else if (Array.isArray(anyParsed.errors) && anyParsed.errors.length > 0) {
+                            const firstError = anyParsed.errors[0];
+                            if (firstError) {
+                                if (typeof firstError.message === 'string') {
+                                    friendlyMessage = firstError.message;
+                                } else if (typeof firstError.reason === 'string') {
+                                    friendlyMessage = firstError.reason;
+                                }
+                            }
+                        }
+                    }
+                } catch {
+                    // Not JSON; fall back to raw text below.
+                }
+
+                const baseMessage =
+                    friendlyMessage ||
+                    (errorText && errorText.trim()) ||
+                    'Failed to call Nanonets OCR API';
+                const sanitizedError = baseMessage.slice(0, 500);
+
                 return {
                     text: null,
                     error: `API Error (${response.status}): ${sanitizedError}`,
@@ -156,10 +202,16 @@ export async function analyzeImage(
             }
 
             const delay = Math.min(
-                OCR_RATE_LIMIT_CONFIG.baseDelay * Math.pow(OCR_RATE_LIMIT_CONFIG.backoffMultiplier, attempt),
+                OCR_RATE_LIMIT_CONFIG.baseDelay *
+                    Math.pow(OCR_RATE_LIMIT_CONFIG.backoffMultiplier, attempt),
                 OCR_RATE_LIMIT_CONFIG.maxDelay,
             );
-            console.log(`Network error, retrying in ${delay}ms (attempt ${attempt + 1}/${OCR_RATE_LIMIT_CONFIG.maxRetries + 1}):`, error);
+            console.log(
+                `Network error, retrying in ${delay}ms (attempt ${attempt + 1}/${
+                    OCR_RATE_LIMIT_CONFIG.maxRetries + 1
+                }):`,
+                error,
+            );
             await sleep(delay);
         }
     }
