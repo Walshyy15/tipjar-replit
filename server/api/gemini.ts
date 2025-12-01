@@ -1,7 +1,7 @@
 import fetch, { FormData } from 'node-fetch';
 import { OCR_RATE_LIMIT_CONFIG, isRateLimitError } from '../config/rate-limit';
 
-const NANONETS_EXTRACTION_ENDPOINT = 'https://extraction-api.nanonets.com/extract';
+const NANONETS_EXTRACTION_ENDPOINT = 'https://app.nanonets.com/api/v2/OCR/FullText';
 
 // Simple in-memory rate limiter
 class RateLimiter {
@@ -81,6 +81,7 @@ export async function analyzeImage(
   imageBase64: string,
   mimeType: string = 'image/jpeg',
   apiKey?: string,
+  modelId?: string,
 ): Promise<{ text: string | null; error?: string }> {
   if (!rateLimiter.canMakeRequest()) {
     const waitTime = rateLimiter.getTimeUntilNextRequest();
@@ -104,10 +105,13 @@ export async function analyzeImage(
       const fileBlob = new Blob([Buffer.from(imageBase64, 'base64')], { type: mimeType });
       formData.append('file', fileBlob, `upload.${mimeType.split('/')[1] || 'jpg'}`);
 
+      // Nanonets v2 FullText endpoint doesn't need output_type='json', it returns JSON by default.
+
       const response = await fetch(NANONETS_EXTRACTION_ENDPOINT, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${nanonetsKey}`,
+          // Nanonets v2 API uses Basic Auth with API key as username and empty password
+          Authorization: `Basic ${Buffer.from(`${nanonetsKey}:`).toString('base64')}`,
         },
         body: formData as any,
       });

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
@@ -6,7 +7,7 @@ import { setupVite, serveStatic, log } from "./vite";
 if (process.env.NODE_ENV === "production") {
   const requiredEnvVars = ["SESSION_SECRET", "NANONETS_API_KEY"];
   const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
-  
+
   if (missingEnvVars.length > 0) {
     console.error(`Error: Missing required environment variables: ${missingEnvVars.join(", ")}`);
     console.error("Please set these variables in your deployment configuration.");
@@ -75,7 +76,7 @@ app.use((req, res, next) => {
   // ALWAYS serve the app on port 5000
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = 5000;
+  const port = process.env.PORT ? parseInt(process.env.PORT) : 5000;
   server.listen({
     port,
     host: "0.0.0.0",
